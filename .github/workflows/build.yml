@@ -1,11 +1,9 @@
-name: Build APK
+name: Build APK - Compatible
 
 on:
   workflow_dispatch:
   push:
-    branches:
-      - main
-      - master
+    branches: [main, master]
 
 jobs:
   build:
@@ -34,13 +32,14 @@ jobs:
         with:
           gradle-version: "8.10.2"
 
-      - name: Create Android project
+      - name: Create project
         shell: bash
         run: |
           set -e
           mkdir -p app/src/main/java/com/example/liquidglass
           mkdir -p app/src/main/res/layout
           mkdir -p app/src/main/res/values
+          mkdir -p app/src/main/res/drawable
 
           cat > settings.gradle <<'EOF'
           pluginManagement {
@@ -69,8 +68,7 @@ jobs:
 
           cat > gradle.properties <<'EOF'
           org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8
-          android.useAndroidX=true
-          android.nonTransitiveRClass=true
+          android.useAndroidX=false
           EOF
 
           cat > app/build.gradle <<'EOF'
@@ -86,17 +84,19 @@ jobs:
                   applicationId 'com.example.liquidglass'
                   minSdk 23
                   targetSdk 35
-                  versionCode 1
-                  versionName '1.0'
+                  versionCode 2
+                  versionName '1.1'
               }
 
               buildTypes {
                   debug {
                       minifyEnabled false
                   }
-                  release {
-                      minifyEnabled false
-                  }
+              }
+
+              compileOptions {
+                  sourceCompatibility JavaVersion.VERSION_17
+                  targetCompatibility JavaVersion.VERSION_17
               }
           }
           EOF
@@ -106,15 +106,16 @@ jobs:
               <application
                   android:theme="@style/AppTheme"
                   android:label="Liquid Glass"
-                  android:allowBackup="true"
-                  android:supportsRtl="true">
+                  android:allowBackup="false"
+                  android:supportsRtl="true"
+                  android:hardwareAccelerated="true">
                   <activity
                       android:name=".MainActivity"
                       android:screenOrientation="portrait"
                       android:exported="true">
                       <intent-filter>
-                          <action android:name="android.intent.action.MAIN"/>
-                          <category android:name="android.intent.category.LAUNCHER"/>
+                          <action android:name="android.intent.action.MAIN" />
+                          <category android:name="android.intent.category.LAUNCHER" />
                       </intent-filter>
                   </activity>
               </application>
@@ -134,12 +135,14 @@ jobs:
                   <item name="android:windowLightStatusBar">true</item>
                   <item name="android:statusBarColor">#FFFFFFFF</item>
                   <item name="android:navigationBarColor">#FFFFFFFF</item>
+                  <item name="android:windowActionModeOverlay">true</item>
                   <item name="android:windowNoTitle">true</item>
               </style>
           </resources>
           EOF
 
           cat > app/src/main/res/layout/activity_main.xml <<'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
           <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
               android:id="@+id/root"
               android:layout_width="match_parent"
@@ -148,15 +151,16 @@ jobs:
 
               <com.example.liquidglass.LiquidGlassView
                   android:layout_width="match_parent"
-                  android:layout_height="match_parent"/>
+                  android:layout_height="match_parent" />
 
               <com.example.liquidglass.GlassPanel
                   android:layout_width="match_parent"
                   android:layout_height="wrap_content"
-                  android:layout_marginStart="20dp"
-                  android:layout_marginEnd="20dp"
-                  android:layout_marginTop="78dp"
-                  android:padding="22dp">
+                  android:layout_marginStart="18dp"
+                  android:layout_marginEnd="18dp"
+                  android:layout_marginTop="72dp"
+                  android:layout_marginBottom="24dp"
+                  android:padding="20dp">
 
                   <LinearLayout
                       android:layout_width="match_parent"
@@ -169,15 +173,15 @@ jobs:
                           android:text="Liquid Glass"
                           android:textColor="#202020"
                           android:textSize="30sp"
-                          android:textStyle="bold"/>
+                          android:textStyle="bold" />
 
                       <TextView
                           android:layout_width="wrap_content"
                           android:layout_height="wrap_content"
                           android:layout_marginTop="5dp"
-                          android:text="iOS 26 风格玻璃材质演示"
+                          android:text="iOS 26 风格玻璃效果演示"
                           android:textColor="#707070"
-                          android:textSize="14sp"/>
+                          android:textSize="14sp" />
 
                       <com.example.liquidglass.GlassButton
                           android:id="@+id/glassButton"
@@ -187,7 +191,7 @@ jobs:
                           android:text="按住体验 Liquid Glass"
                           android:textAllCaps="false"
                           android:textColor="#222222"
-                          android:textSize="16sp"/>
+                          android:textSize="16sp" />
 
                       <TextView
                           android:id="@+id/status"
@@ -197,7 +201,7 @@ jobs:
                           android:layout_marginTop="14dp"
                           android:text="Ready"
                           android:textColor="#777777"
-                          android:textSize="13sp"/>
+                          android:textSize="13sp" />
                   </LinearLayout>
               </com.example.liquidglass.GlassPanel>
           </FrameLayout>
@@ -219,8 +223,11 @@ jobs:
                   GlassButton button = findViewById(R.id.glassButton);
                   TextView status = findViewById(R.id.status);
 
-                  button.setOnPressStateChangedListener(pressed ->
-                          status.setText(pressed ? "Glass pressed" : "Ready"));
+                  if (button != null && status != null) {
+                      button.setOnPressStateChangedListener(
+                              pressed -> status.setText(pressed ? "Glass pressed" : "Ready")
+                      );
+                  }
               }
           }
           EOF
@@ -229,47 +236,84 @@ jobs:
           package com.example.liquidglass;
 
           import android.content.Context;
-          import android.graphics.*;
+          import android.graphics.Canvas;
+          import android.graphics.Color;
+          import android.graphics.LinearGradient;
+          import android.graphics.Paint;
+          import android.graphics.RadialGradient;
+          import android.graphics.Shader;
+          import android.os.Build;
+          import android.util.AttributeSet;
           import android.view.View;
 
           public class LiquidGlassView extends View {
               private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
-              private float phase;
+              private float phase = 0f;
 
               public LiquidGlassView(Context context) {
                   super(context);
-                  setLayerType(View.LAYER_TYPE_SOFTWARE, null);
+                  init();
+              }
+
+              public LiquidGlassView(Context context, AttributeSet attrs) {
+                  super(context, attrs);
+                  init();
+              }
+
+              public LiquidGlassView(Context context, AttributeSet attrs, int defStyleAttr) {
+                  super(context, attrs, defStyleAttr);
+                  init();
+              }
+
+              private void init() {
+                  if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.HONEYCOMB) {
+                      setLayerType(View.LAYER_TYPE_HARDWARE, null);
+                  }
+                  setFocusable(false);
               }
 
               @Override
               protected void onDraw(Canvas c) {
                   super.onDraw(c);
-                  float w = getWidth();
-                  float h = getHeight();
 
+                  final float w = getWidth();
+                  final float h = getHeight();
+                  if (w <= 0 || h <= 0) return;
+
+                  paint.setStyle(Paint.Style.FILL);
                   paint.setShader(new LinearGradient(
-                          0, 0, w, h, Color.WHITE,
+                          0, 0, w, h,
+                          Color.WHITE,
                           Color.rgb(246, 246, 246),
                           Shader.TileMode.CLAMP));
                   c.drawRect(0, 0, w, h, paint);
 
                   paint.setShader(new RadialGradient(
-                          w * .22f, h * .20f, w * .50f,
-                          new int[]{0x36FFFFFF, 0x15DDE7FF, 0x00FFFFFF},
-                          null, Shader.TileMode.CLAMP));
-                  c.drawCircle(w * .22f, h * .20f, w * .50f, paint);
+                          w * 0.20f, h * 0.18f, Math.max(w, h) * 0.48f,
+                          new int[]{0x32DCEBFF, 0x18FFFFFF, 0x00FFFFFF},
+                          null,
+                          Shader.TileMode.CLAMP));
+                  c.drawRect(0, 0, w, h, paint);
 
-                  phase += 0.006f;
-                  float x = (float)((Math.sin(phase) * .5 + .5) * (w * 1.35f) - w * .20f);
+                  phase += 0.008f;
+                  if (phase > 6.283185f) phase -= 6.283185f;
+
+                  final float x = (float)((Math.sin(phase) * 0.5 + 0.5) * (w * 1.25f) - w * 0.15f);
 
                   paint.setShader(new LinearGradient(
-                          x, 0, x + w * .42f, h,
-                          new int[]{0x00FFFFFF, 0x28FFFFFF, 0x00FFFFFF},
-                          null, Shader.TileMode.CLAMP));
+                          x, 0, x + Math.max(180f, w * 0.42f), h,
+                          new int[]{0x00FFFFFF, 0x24FFFFFF, 0x00FFFFFF},
+                          null,
+                          Shader.TileMode.CLAMP));
                   c.drawRect(0, 0, w, h, paint);
 
                   paint.setShader(null);
-                  postInvalidateOnAnimation();
+
+                  if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN) {
+                      postInvalidateOnAnimation();
+                  } else {
+                      postInvalidateDelayed(16);
+                  }
               }
           }
           EOF
@@ -278,8 +322,12 @@ jobs:
           package com.example.liquidglass;
 
           import android.content.Context;
-          import android.graphics.*;
+          import android.graphics.Canvas;
+          import android.graphics.LinearGradient;
+          import android.graphics.Paint;
+          import android.graphics.Shader;
           import android.graphics.drawable.GradientDrawable;
+          import android.util.AttributeSet;
           import android.view.View;
           import android.widget.FrameLayout;
 
@@ -288,37 +336,67 @@ jobs:
 
               public GlassPanel(Context context) {
                   super(context);
+                  init();
+              }
+
+              public GlassPanel(Context context, AttributeSet attrs) {
+                  super(context, attrs);
+                  init();
+              }
+
+              public GlassPanel(Context context, AttributeSet attrs, int defStyleAttr) {
+                  super(context, attrs, defStyleAttr);
+                  init();
+              }
+
+              private void init() {
                   setWillNotDraw(false);
                   setLayerType(View.LAYER_TYPE_SOFTWARE, null);
+
                   GradientDrawable bg = new GradientDrawable();
-                  bg.setColor(0x78FFFFFF);
-                  bg.setCornerRadius(30);
+                  bg.setColor(0x72FFFFFF);
+                  bg.setCornerRadius(dp(30));
                   setBackground(bg);
-                  setElevation(18f);
+
+                  if (android.os.Build.VERSION.SDK_INT >= 21) {
+                      setElevation(dp(12));
+                  }
+              }
+
+              private float dp(float value) {
+                  return value * getResources().getDisplayMetrics().density;
               }
 
               @Override
               protected void onDraw(Canvas c) {
                   super.onDraw(c);
 
-                  edge.setStyle(Paint.Style.STROKE);
-                  edge.setStrokeWidth(1.4f);
-                  edge.setShader(new LinearGradient(
-                          0, 0, getWidth(), getHeight(),
-                          0xEFFFFFFF, 0x42FFFFFF,
-                          Shader.TileMode.CLAMP));
-                  c.drawRoundRect(
-                          0.7f, 0.7f, getWidth() - 0.7f, getHeight() - 0.7f,
-                          30, 30, edge);
+                  float w = getWidth();
+                  float h = getHeight();
+                  if (w <= 0 || h <= 0) return;
 
-                  edge.setStrokeWidth(4f);
+                  edge.setStyle(Paint.Style.STROKE);
+                  edge.setStrokeWidth(dp(1.2f));
                   edge.setShader(new LinearGradient(
-                          0, 0, 0, getHeight() * .32f,
-                          0xBFFFFFFF, 0x00FFFFFF,
+                          0, 0, w, h,
+                          0xEFFFFFFF,
+                          0x38FFFFFF,
                           Shader.TileMode.CLAMP));
                   c.drawRoundRect(
-                          2, 2, getWidth() - 2, getHeight() - 2,
-                          30, 30, edge);
+                          dp(0.8f), dp(0.8f),
+                          w - dp(0.8f), h - dp(0.8f),
+                          dp(30), dp(30), edge);
+
+                  edge.setStrokeWidth(dp(3));
+                  edge.setShader(new LinearGradient(
+                          0, 0, 0, h * 0.35f,
+                          0xA8FFFFFF,
+                          0x00FFFFFF,
+                          Shader.TileMode.CLAMP));
+                  c.drawRoundRect(
+                          dp(2), dp(2),
+                          w - dp(2), h - dp(2),
+                          dp(30), dp(30), edge);
 
                   edge.setShader(null);
               }
@@ -329,14 +407,21 @@ jobs:
           package com.example.liquidglass;
 
           import android.content.Context;
-          import android.graphics.*;
+          import android.graphics.Canvas;
+          import android.graphics.LinearGradient;
+          import android.graphics.Paint;
+          import android.graphics.Shader;
           import android.graphics.drawable.GradientDrawable;
-          import android.view.*;
+          import android.util.AttributeSet;
+          import android.view.MotionEvent;
+          import android.view.View;
+          import android.view.animation.OvershootInterpolator;
           import android.widget.TextView;
 
           public class GlassButton extends TextView {
               private final Paint edge = new Paint(Paint.ANTI_ALIAS_FLAG);
-              private float highlightX = .5f;
+              private final Paint gloss = new Paint(Paint.ANTI_ALIAS_FLAG);
+              private float highlightX = 0.5f;
               private OnPressStateChangedListener listener;
 
               public interface OnPressStateChangedListener {
@@ -345,43 +430,71 @@ jobs:
 
               public GlassButton(Context context) {
                   super(context);
-                  setGravity(Gravity.CENTER);
+                  init();
+              }
+
+              public GlassButton(Context context, AttributeSet attrs) {
+                  super(context, attrs);
+                  init();
+              }
+
+              public GlassButton(Context context, AttributeSet attrs, int defStyleAttr) {
+                  super(context, attrs, defStyleAttr);
+                  init();
+              }
+
+              private void init() {
+                  setGravity(android.view.Gravity.CENTER);
                   setClickable(true);
+                  setFocusable(true);
                   setLayerType(View.LAYER_TYPE_SOFTWARE, null);
 
                   GradientDrawable bg = new GradientDrawable();
                   bg.setColor(0x66FFFFFF);
-                  bg.setCornerRadius(28);
+                  bg.setCornerRadius(dp(28));
                   setBackground(bg);
-                  setElevation(10f);
+
+                  if (android.os.Build.VERSION.SDK_INT >= 21) {
+                      setElevation(dp(8));
+                  }
 
                   setOnTouchListener((v, e) -> {
                       switch (e.getActionMasked()) {
                           case MotionEvent.ACTION_DOWN:
-                              highlightX = e.getX() / Math.max(1f, getWidth());
+                              highlightX = normalizedX(e.getX());
+                              animate().cancel();
                               animate().scaleX(.965f).scaleY(.965f).setDuration(90).start();
                               if (listener != null) listener.onChanged(true);
                               invalidate();
                               return true;
 
                           case MotionEvent.ACTION_MOVE:
-                              highlightX = Math.max(0f, Math.min(
-                                      1f, e.getX() / Math.max(1f, getWidth())));
+                              highlightX = normalizedX(e.getX());
                               invalidate();
                               return true;
 
                           case MotionEvent.ACTION_UP:
                           case MotionEvent.ACTION_CANCEL:
                               animate().scaleX(1f).scaleY(1f)
-                                      .setDuration(260)
-                                      .setInterpolator(new android.view.animation.OvershootInterpolator(1.6f))
+                                      .setDuration(230)
+                                      .setInterpolator(new OvershootInterpolator(1.35f))
                                       .start();
                               if (listener != null) listener.onChanged(false);
                               invalidate();
                               return true;
+
+                          default:
+                              return true;
                       }
-                      return true;
                   });
+              }
+
+              private float normalizedX(float x) {
+                  return Math.max(0f, Math.min(1f, x / Math.max(1f, getWidth())));
+              }
+
+              private float dp(float value) {
+                  return value * getResources().getDisplayMetrics().density;
               }
 
               public void setOnPressStateChangedListener(OnPressStateChangedListener l) {
@@ -392,37 +505,39 @@ jobs:
               protected void onDraw(Canvas c) {
                   super.onDraw(c);
 
-                  edge.setStyle(Paint.Style.STROKE);
-                  edge.setStrokeWidth(1.4f);
-                  edge.setShader(new LinearGradient(
-                          highlightX * getWidth() - 100, 0,
-                          highlightX * getWidth() + 100, getHeight(),
-                          new int[]{0x00FFFFFF, 0xDFFFFFFF, 0x00FFFFFF},
-                          null, Shader.TileMode.CLAMP));
-                  c.drawRoundRect(
-                          1, 1, getWidth() - 1, getHeight() - 1,
-                          28, 28, edge);
+                  float w = getWidth();
+                  float h = getHeight();
+                  if (w <= 0 || h <= 0) return;
 
-                  Paint gloss = new Paint(Paint.ANTI_ALIAS_FLAG);
+                  edge.setStyle(Paint.Style.STROKE);
+                  edge.setStrokeWidth(dp(1.2f));
+                  edge.setShader(new LinearGradient(
+                          highlightX * w - dp(100), 0,
+                          highlightX * w + dp(100), h,
+                          new int[]{0x00FFFFFF, 0xD9FFFFFF, 0x00FFFFFF},
+                          null,
+                          Shader.TileMode.CLAMP));
+                  c.drawRoundRect(dp(1), dp(1), w - dp(1), h - dp(1), dp(28), dp(28), edge);
+
                   gloss.setShader(new LinearGradient(
-                          0, 0, 0, getHeight() * .5f,
-                          new int[]{0x70FFFFFF, 0x12FFFFFF, 0x00FFFFFF},
-                          null, Shader.TileMode.CLAMP));
-                  c.drawRoundRect(
-                          3, 2, getWidth() - 3, getHeight() * .55f,
-                          25, 25, gloss);
+                          0, 0, 0, h * 0.55f,
+                          new int[]{0x68FFFFFF, 0x12FFFFFF, 0x00FFFFFF},
+                          null,
+                          Shader.TileMode.CLAMP));
+                  c.drawRoundRect(dp(3), dp(2), w - dp(3), h * 0.55f, dp(25), dp(25), gloss);
 
                   edge.setShader(null);
+                  gloss.setShader(null);
               }
           }
           EOF
 
-      - name: Build APK
+      - name: Build debug APK
         run: gradle assembleDebug --no-daemon
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: LiquidGlass-debug-apk
+          name: LiquidGlass-compatible-debug-apk
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
