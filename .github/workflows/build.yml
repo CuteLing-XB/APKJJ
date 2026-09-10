@@ -3,6 +3,9 @@ name: Build APK
 on:
   workflow_dispatch:
   push:
+    branches:
+      - main
+      - master
 
 jobs:
   build:
@@ -12,22 +15,414 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup JDK
+      - name: Setup Java 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '17'
+          java-version: "17"
 
-      - name: Setup Android
+      - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Build Debug APK
+      - name: Install Android SDK
         run: |
-          chmod +x gradlew
-          ./gradlew assembleDebug
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0"
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.10.2"
+
+      - name: Create Android project
+        shell: bash
+        run: |
+          set -e
+          mkdir -p app/src/main/java/com/example/liquidglass
+          mkdir -p app/src/main/res/layout
+          mkdir -p app/src/main/res/values
+
+          cat > settings.gradle <<'EOF'
+          pluginManagement {
+              repositories {
+                  google()
+                  mavenCentral()
+                  gradlePluginPortal()
+              }
+          }
+          dependencyResolutionManagement {
+              repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+              repositories {
+                  google()
+                  mavenCentral()
+              }
+          }
+          rootProject.name = "LiquidGlass"
+          include(":app")
+          EOF
+
+          cat > build.gradle <<'EOF'
+          plugins {
+              id 'com.android.application' version '8.6.1' apply false
+          }
+          EOF
+
+          cat > gradle.properties <<'EOF'
+          org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8
+          android.useAndroidX=true
+          android.nonTransitiveRClass=true
+          EOF
+
+          cat > app/build.gradle <<'EOF'
+          plugins {
+              id 'com.android.application'
+          }
+
+          android {
+              namespace 'com.example.liquidglass'
+              compileSdk 35
+
+              defaultConfig {
+                  applicationId 'com.example.liquidglass'
+                  minSdk 23
+                  targetSdk 35
+                  versionCode 1
+                  versionName '1.0'
+              }
+
+              buildTypes {
+                  debug {
+                      minifyEnabled false
+                  }
+                  release {
+                      minifyEnabled false
+                  }
+              }
+          }
+          EOF
+
+          cat > app/src/main/AndroidManifest.xml <<'EOF'
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+              <application
+                  android:theme="@style/AppTheme"
+                  android:label="Liquid Glass"
+                  android:allowBackup="true"
+                  android:supportsRtl="true">
+                  <activity
+                      android:name=".MainActivity"
+                      android:screenOrientation="portrait"
+                      android:exported="true">
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN"/>
+                          <category android:name="android.intent.category.LAUNCHER"/>
+                      </intent-filter>
+                  </activity>
+              </application>
+          </manifest>
+          EOF
+
+          cat > app/src/main/res/values/colors.xml <<'EOF'
+          <resources>
+              <color name="white">#FFFFFFFF</color>
+          </resources>
+          EOF
+
+          cat > app/src/main/res/values/styles.xml <<'EOF'
+          <resources>
+              <style name="AppTheme" parent="android:style/Theme.Material.Light.NoActionBar">
+                  <item name="android:fontFamily">sans</item>
+                  <item name="android:windowLightStatusBar">true</item>
+                  <item name="android:statusBarColor">#FFFFFFFF</item>
+                  <item name="android:navigationBarColor">#FFFFFFFF</item>
+                  <item name="android:windowNoTitle">true</item>
+              </style>
+          </resources>
+          EOF
+
+          cat > app/src/main/res/layout/activity_main.xml <<'EOF'
+          <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+              android:id="@+id/root"
+              android:layout_width="match_parent"
+              android:layout_height="match_parent"
+              android:background="#FFFFFFFF">
+
+              <com.example.liquidglass.LiquidGlassView
+                  android:layout_width="match_parent"
+                  android:layout_height="match_parent"/>
+
+              <com.example.liquidglass.GlassPanel
+                  android:layout_width="match_parent"
+                  android:layout_height="wrap_content"
+                  android:layout_marginStart="20dp"
+                  android:layout_marginEnd="20dp"
+                  android:layout_marginTop="78dp"
+                  android:padding="22dp">
+
+                  <LinearLayout
+                      android:layout_width="match_parent"
+                      android:layout_height="wrap_content"
+                      android:orientation="vertical">
+
+                      <TextView
+                          android:layout_width="wrap_content"
+                          android:layout_height="wrap_content"
+                          android:text="Liquid Glass"
+                          android:textColor="#202020"
+                          android:textSize="30sp"
+                          android:textStyle="bold"/>
+
+                      <TextView
+                          android:layout_width="wrap_content"
+                          android:layout_height="wrap_content"
+                          android:layout_marginTop="5dp"
+                          android:text="iOS 26 风格玻璃材质演示"
+                          android:textColor="#707070"
+                          android:textSize="14sp"/>
+
+                      <com.example.liquidglass.GlassButton
+                          android:id="@+id/glassButton"
+                          android:layout_width="match_parent"
+                          android:layout_height="56dp"
+                          android:layout_marginTop="22dp"
+                          android:text="按住体验 Liquid Glass"
+                          android:textAllCaps="false"
+                          android:textColor="#222222"
+                          android:textSize="16sp"/>
+
+                      <TextView
+                          android:id="@+id/status"
+                          android:layout_width="wrap_content"
+                          android:layout_height="wrap_content"
+                          android:layout_gravity="center_horizontal"
+                          android:layout_marginTop="14dp"
+                          android:text="Ready"
+                          android:textColor="#777777"
+                          android:textSize="13sp"/>
+                  </LinearLayout>
+              </com.example.liquidglass.GlassPanel>
+          </FrameLayout>
+          EOF
+
+          cat > app/src/main/java/com/example/liquidglass/MainActivity.java <<'EOF'
+          package com.example.liquidglass;
+
+          import android.app.Activity;
+          import android.os.Bundle;
+          import android.widget.TextView;
+
+          public class MainActivity extends Activity {
+              @Override
+              protected void onCreate(Bundle savedInstanceState) {
+                  super.onCreate(savedInstanceState);
+                  setContentView(R.layout.activity_main);
+
+                  GlassButton button = findViewById(R.id.glassButton);
+                  TextView status = findViewById(R.id.status);
+
+                  button.setOnPressStateChangedListener(pressed ->
+                          status.setText(pressed ? "Glass pressed" : "Ready"));
+              }
+          }
+          EOF
+
+          cat > app/src/main/java/com/example/liquidglass/LiquidGlassView.java <<'EOF'
+          package com.example.liquidglass;
+
+          import android.content.Context;
+          import android.graphics.*;
+          import android.view.View;
+
+          public class LiquidGlassView extends View {
+              private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+              private float phase;
+
+              public LiquidGlassView(Context context) {
+                  super(context);
+                  setLayerType(View.LAYER_TYPE_SOFTWARE, null);
+              }
+
+              @Override
+              protected void onDraw(Canvas c) {
+                  super.onDraw(c);
+                  float w = getWidth();
+                  float h = getHeight();
+
+                  paint.setShader(new LinearGradient(
+                          0, 0, w, h, Color.WHITE,
+                          Color.rgb(246, 246, 246),
+                          Shader.TileMode.CLAMP));
+                  c.drawRect(0, 0, w, h, paint);
+
+                  paint.setShader(new RadialGradient(
+                          w * .22f, h * .20f, w * .50f,
+                          new int[]{0x36FFFFFF, 0x15DDE7FF, 0x00FFFFFF},
+                          null, Shader.TileMode.CLAMP));
+                  c.drawCircle(w * .22f, h * .20f, w * .50f, paint);
+
+                  phase += 0.006f;
+                  float x = (float)((Math.sin(phase) * .5 + .5) * (w * 1.35f) - w * .20f);
+
+                  paint.setShader(new LinearGradient(
+                          x, 0, x + w * .42f, h,
+                          new int[]{0x00FFFFFF, 0x28FFFFFF, 0x00FFFFFF},
+                          null, Shader.TileMode.CLAMP));
+                  c.drawRect(0, 0, w, h, paint);
+
+                  paint.setShader(null);
+                  postInvalidateOnAnimation();
+              }
+          }
+          EOF
+
+          cat > app/src/main/java/com/example/liquidglass/GlassPanel.java <<'EOF'
+          package com.example.liquidglass;
+
+          import android.content.Context;
+          import android.graphics.*;
+          import android.graphics.drawable.GradientDrawable;
+          import android.view.View;
+          import android.widget.FrameLayout;
+
+          public class GlassPanel extends FrameLayout {
+              private final Paint edge = new Paint(Paint.ANTI_ALIAS_FLAG);
+
+              public GlassPanel(Context context) {
+                  super(context);
+                  setWillNotDraw(false);
+                  setLayerType(View.LAYER_TYPE_SOFTWARE, null);
+                  GradientDrawable bg = new GradientDrawable();
+                  bg.setColor(0x78FFFFFF);
+                  bg.setCornerRadius(30);
+                  setBackground(bg);
+                  setElevation(18f);
+              }
+
+              @Override
+              protected void onDraw(Canvas c) {
+                  super.onDraw(c);
+
+                  edge.setStyle(Paint.Style.STROKE);
+                  edge.setStrokeWidth(1.4f);
+                  edge.setShader(new LinearGradient(
+                          0, 0, getWidth(), getHeight(),
+                          0xEFFFFFFF, 0x42FFFFFF,
+                          Shader.TileMode.CLAMP));
+                  c.drawRoundRect(
+                          0.7f, 0.7f, getWidth() - 0.7f, getHeight() - 0.7f,
+                          30, 30, edge);
+
+                  edge.setStrokeWidth(4f);
+                  edge.setShader(new LinearGradient(
+                          0, 0, 0, getHeight() * .32f,
+                          0xBFFFFFFF, 0x00FFFFFF,
+                          Shader.TileMode.CLAMP));
+                  c.drawRoundRect(
+                          2, 2, getWidth() - 2, getHeight() - 2,
+                          30, 30, edge);
+
+                  edge.setShader(null);
+              }
+          }
+          EOF
+
+          cat > app/src/main/java/com/example/liquidglass/GlassButton.java <<'EOF'
+          package com.example.liquidglass;
+
+          import android.content.Context;
+          import android.graphics.*;
+          import android.graphics.drawable.GradientDrawable;
+          import android.view.*;
+          import android.widget.TextView;
+
+          public class GlassButton extends TextView {
+              private final Paint edge = new Paint(Paint.ANTI_ALIAS_FLAG);
+              private float highlightX = .5f;
+              private OnPressStateChangedListener listener;
+
+              public interface OnPressStateChangedListener {
+                  void onChanged(boolean pressed);
+              }
+
+              public GlassButton(Context context) {
+                  super(context);
+                  setGravity(Gravity.CENTER);
+                  setClickable(true);
+                  setLayerType(View.LAYER_TYPE_SOFTWARE, null);
+
+                  GradientDrawable bg = new GradientDrawable();
+                  bg.setColor(0x66FFFFFF);
+                  bg.setCornerRadius(28);
+                  setBackground(bg);
+                  setElevation(10f);
+
+                  setOnTouchListener((v, e) -> {
+                      switch (e.getActionMasked()) {
+                          case MotionEvent.ACTION_DOWN:
+                              highlightX = e.getX() / Math.max(1f, getWidth());
+                              animate().scaleX(.965f).scaleY(.965f).setDuration(90).start();
+                              if (listener != null) listener.onChanged(true);
+                              invalidate();
+                              return true;
+
+                          case MotionEvent.ACTION_MOVE:
+                              highlightX = Math.max(0f, Math.min(
+                                      1f, e.getX() / Math.max(1f, getWidth())));
+                              invalidate();
+                              return true;
+
+                          case MotionEvent.ACTION_UP:
+                          case MotionEvent.ACTION_CANCEL:
+                              animate().scaleX(1f).scaleY(1f)
+                                      .setDuration(260)
+                                      .setInterpolator(new android.view.animation.OvershootInterpolator(1.6f))
+                                      .start();
+                              if (listener != null) listener.onChanged(false);
+                              invalidate();
+                              return true;
+                      }
+                      return true;
+                  });
+              }
+
+              public void setOnPressStateChangedListener(OnPressStateChangedListener l) {
+                  listener = l;
+              }
+
+              @Override
+              protected void onDraw(Canvas c) {
+                  super.onDraw(c);
+
+                  edge.setStyle(Paint.Style.STROKE);
+                  edge.setStrokeWidth(1.4f);
+                  edge.setShader(new LinearGradient(
+                          highlightX * getWidth() - 100, 0,
+                          highlightX * getWidth() + 100, getHeight(),
+                          new int[]{0x00FFFFFF, 0xDFFFFFFF, 0x00FFFFFF},
+                          null, Shader.TileMode.CLAMP));
+                  c.drawRoundRect(
+                          1, 1, getWidth() - 1, getHeight() - 1,
+                          28, 28, edge);
+
+                  Paint gloss = new Paint(Paint.ANTI_ALIAS_FLAG);
+                  gloss.setShader(new LinearGradient(
+                          0, 0, 0, getHeight() * .5f,
+                          new int[]{0x70FFFFFF, 0x12FFFFFF, 0x00FFFFFF},
+                          null, Shader.TileMode.CLAMP));
+                  c.drawRoundRect(
+                          3, 2, getWidth() - 3, getHeight() * .55f,
+                          25, 25, gloss);
+
+                  edge.setShader(null);
+              }
+          }
+          EOF
+
+      - name: Build APK
+        run: gradle assembleDebug --no-daemon
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: LiquidGlass-APK
-          path: app/build/outputs/apk/debug/*.apk
+          name: LiquidGlass-debug-apk
+          path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
